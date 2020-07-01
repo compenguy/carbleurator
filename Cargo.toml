@@ -7,5 +7,10 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+anyhow = "1.0"
+thiserror = "1.0"
+# btleplug 0.4 uses failure 0.1.8 and we need a trait from it to make the errors
+# compatible with anyhow
+failure = "0.1.8"
 gilrs = "0.7"
 btleplug = "0.4"
