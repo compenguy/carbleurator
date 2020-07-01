@@ -1,0 +1,11 @@
+[package]
+name = "carbleurator"
+version = "0.1.0"
+authors = ["Will Page <compenguy@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+gilrs = "0.7"
+btleplug = "0.4"
