@@ -8,20 +8,16 @@ const GREEN_LED: &str = "/sys/class/leds/led1";
 
 #[cfg(feature = "rpi")]
 fn get_led_state(path: &str) -> u8 {
-    let mut file =
-        std::fs::File::open(path).expect("Failed to open led device for reading");
+    let mut file = std::fs::File::open(path).expect("Failed to open led device for reading");
     let mut contents = String::new();
-    file.read_to_string(&mut contents).expect(format!(
-        "Failed to read current state of led device {}",
-        path
-    ));
+    file.read_to_string(&mut contents)
+        .expect("Failed to read current state of led device {}");
     contents.parse::<u8>().unwrap_or(0)
 }
 
 #[cfg(feature = "rpi")]
 fn set_led_state(path: &str, new_state: u8) {
-    let mut out_file = std::fs::File::create(path)
-        .expect("Failed to open led device for writing");
+    let mut out_file = std::fs::File::create(path).expect("Failed to open led device for writing");
     out_file
         .write(new_state.to_string())
         .expect("Failed to write new state for led device");

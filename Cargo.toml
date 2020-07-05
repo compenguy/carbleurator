@@ -7,7 +7,6 @@ edition = "2018"
 homepage = "https://github.com/compenguy/carbleurator"
 repository = "https://github.com/compenguy/carbleurator.git"
 license = "MIT"
-license_file = "LICENSE"
 
 [features]
 rpi = []
