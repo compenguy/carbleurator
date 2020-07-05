@@ -2,9 +2,9 @@
 use std::io::{Read, Write};
 
 #[cfg(feature = "rpi")]
-const RED_LED: &str = "/sys/class/leds/led0";
+const RED_LED: &str = "/sys/class/leds/led0/brightness";
 #[cfg(feature = "rpi")]
-const GREEN_LED: &str = "/sys/class/leds/led1";
+const GREEN_LED: &str = "/sys/class/leds/led1/brightness";
 
 #[cfg(feature = "rpi")]
 fn get_led_state(path: &str) -> u8 {
