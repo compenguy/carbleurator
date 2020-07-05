@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use btleplug::api::{Central, Peripheral};
+use btleplug::api::{Central, Peripheral, UUID};
 use failure::Fail;
 use log::{debug, error, trace, warn};
 
@@ -12,9 +12,9 @@ use crate::signaling::{update_signal_failure, update_signal_progress, update_sig
 
 const BLE_PERIPH_NAME: &str = "HC-08";
 //const BLE_SVC_UUID: &str = "0000FFE0-0000-1000-8000-00805F9B34FB";
-//const BLE_SVC_HANDLE: u16 = 0xFFE0;
+//const BLE_SVC_UUID_SHORT: u16 = 0xFFE0;
 //const BLE_CHR_UUID: &str = "0000FFE1-0000-1000-8000-00805F9B34FB";
-const BLE_CHR_HANDLE: u16 = 0xFFE1;
+const BLE_CHR_UUID_SHORT: u16 = 0xFFE1;
 
 pub(crate) struct Carbleurator {
     gilrs: gilrs::Gilrs,
@@ -115,10 +115,11 @@ impl Carbleurator {
 
         trace!("Searching for correct peripheral characteristic for communication...");
         let res_characteristics = peripheral
-            .discover_characteristics_in_range(BLE_CHR_HANDLE, BLE_CHR_HANDLE)
+            .discover_characteristics()
             .map_err(|e| e.compat())?;
         let characteristic = res_characteristics
-            .first()
+            .into_iter()
+            .find(|x| x.uuid == UUID::B16(BLE_CHR_UUID_SHORT))
             .ok_or(CarbleuratorError::BleAdapterMissingCharacteristic)?;
 
         trace!("Gamepad input configured, connected to compatible car, starting control loop...");
@@ -163,7 +164,7 @@ impl Carbleurator {
             // passed
             trace!("Preparing to send message to vehicle: {:?}", msg);
             peripheral
-                .command(characteristic, msg)
+                .command(&characteristic, msg)
                 .map_err(|e| e.compat())?;
 
             // TODO: crank up sleep time each period we go without getting input, up to a
