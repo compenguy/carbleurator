@@ -12,6 +12,10 @@ pub enum CarbleuratorError {
     MissingGamepad,
     #[error("No BLE adapters found")]
     MissingBleAdapter,
+    #[error("BLE adapter discovery timeout")]
+    BleAdapterDiscoveryTimeout,
+    #[error("BLE adapter missing required characteristic")]
+    BleAdapterMissingCharacteristic,
 }
 
 impl From<gilrs::Error> for CarbleuratorError {
