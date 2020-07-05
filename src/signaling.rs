@@ -20,7 +20,7 @@ fn set_led_state(path: &str, new_state: u8) {
     let mut out_file = std::fs::File::create(path).expect("Failed to open led device for writing");
     let msg = new_state.to_string();
     out_file
-        .write(&msg)
+        .write(msg.as_bytes())
         .expect("Failed to write new state for led device");
 }
 
