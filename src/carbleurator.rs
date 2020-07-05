@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use btleplug::api::{Central, Peripheral};
 use failure::Fail;
+use log::{debug, error, trace, warn};
 
 use gilrs::ev::{Axis, Button, EventType};
 
@@ -25,29 +26,34 @@ pub(crate) struct Carbleurator {
 impl Carbleurator {
     pub(crate) fn new() -> Result<Self> {
         let result = Self::init();
-        match result {
+        match &result {
             Ok(_) => update_signal_progress(),
-            Err(_) => update_signal_failure(),
+            Err(e) => {
+                error!("Carbleurator initialization failure: {}", e);
+                update_signal_failure();
+            }
         }
         result
     }
 
     fn init() -> Result<Self> {
         update_signal_progress();
+        trace!("Initializing gamepads...");
         let gilrs = gamepad::init_gamepads()?;
-        // debug:
-        //for (_id, gamepad) in gilrs.gamepads() {
-        //    println!("{} is {:?}", gamepad.name(), gamepad.power_info());
-        //}
+        for (_id, gamepad) in gilrs.gamepads() {
+            debug!("{} is {:?}", gamepad.name(), gamepad.power_info());
+        }
         update_signal_progress();
 
-        // Init bluetooth
+        trace!("Initializing bluetooth...");
         let manager = ble::Manager::new().map_err(|e| e.compat())?;
 
         update_signal_progress();
 
+        trace!("Initializing BLE central...");
         let adapter = ble::get_central(&manager)?;
 
+        trace!("Carbleurator initialized.");
         Ok(Carbleurator {
             gilrs,
             adapter,
@@ -58,15 +64,21 @@ impl Carbleurator {
 
     pub(crate) fn event_loop(&mut self) {
         loop {
-            let _result = self.run_events();
-            update_signal_failure();
-            std::thread::sleep(std::time::Duration::from_secs(1));
+            trace!("Starting event processing...");
+            if let Err(e) = self.run_events() {
+                error!("Event processing failed with error {}", e);
+                update_signal_failure();
+            }
+
+            std::thread::sleep(std::time::Duration::from_secs(3));
             update_signal_progress();
+            trace!("Retrying event processing...");
         }
     }
 
     fn run_events(&mut self) -> Result<()> {
         update_signal_progress();
+        trace!("Starting scan for BLE peripherals...");
         self.adapter
             .start_scan()
             .map_err(|e| e.compat())
@@ -74,12 +86,14 @@ impl Carbleurator {
 
         update_signal_progress();
 
+        trace!("Waiting for devices to appear...");
         std::thread::sleep(std::time::Duration::from_secs(1));
 
         update_signal_progress();
 
         let mut counter = 0;
         let mut opt_peripheral = None;
+        trace!("Iterating over discovered devices searching for a compatible peripheral...");
         while counter <= 5 && opt_peripheral.is_none() {
             opt_peripheral = self
                 .adapter
@@ -87,6 +101,7 @@ impl Carbleurator {
                 .into_iter()
                 .find(|x| x.properties().local_name == Some(BLE_PERIPH_NAME.to_string()));
             if opt_peripheral.is_none() {
+                warn!("No compatible BLE peripherals found. Retrying...");
                 counter += 1;
                 std::thread::sleep(std::time::Duration::from_secs(1));
             }
@@ -94,9 +109,11 @@ impl Carbleurator {
         }
 
         let peripheral = opt_peripheral.ok_or(CarbleuratorError::BleAdapterDiscoveryTimeout)?;
+        trace!("BLE peripheral found. Connecting...");
         peripheral.connect().map_err(|e| e.compat())?;
         update_signal_progress();
 
+        trace!("Searching for correct peripheral characteristic for communication...");
         let res_characteristics = peripheral
             .discover_characteristics_in_range(BLE_CHR_HANDLE, BLE_CHR_HANDLE)
             .map_err(|e| e.compat())?;
@@ -104,9 +121,11 @@ impl Carbleurator {
             .first()
             .ok_or(CarbleuratorError::BleAdapterMissingCharacteristic)?;
 
+        trace!("Gamepad input configured, connected to compatible car, starting control loop...");
         update_signal_success();
         loop {
             while let Some(gilrs::Event { event, .. }) = self.gilrs.next_event() {
+                trace!("Processing input event {:?}", event);
                 match event {
                     EventType::ButtonPressed(Button::DPadLeft, _) => self.d_x = -128,
                     EventType::ButtonReleased(Button::DPadLeft, _) => self.d_x = 0,
@@ -140,9 +159,15 @@ impl Carbleurator {
                 (-128..=-64, -63..=63) => b"l",
                 (64..=127, -63..=63) => b"r",
             };
+            // TODO: only send message if the msg value changed or after x amount of seconds have
+            // passed
+            trace!("Preparing to send message to vehicle: {:?}", msg);
             peripheral
                 .command(characteristic, msg)
                 .map_err(|e| e.compat())?;
+
+            // TODO: crank up sleep time each period we go without getting input, up to a
+            // predetermined limit, but reset the sleep time once we do get input
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
     }
