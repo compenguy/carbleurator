@@ -1,11 +1,12 @@
 use anyhow::{Context, Result};
-use btleplug::api::{Central, Peripheral, UUID};
-use failure::Fail;
+use btleplug::api::Manager as _;
+use btleplug::api::{bleuuid, Central, Peripheral, ScanFilter, WriteType};
+//use failure::Fail;
 use log::{debug, error, trace, warn};
 
+use btleplug::platform::{Adapter, Manager};
 use gilrs::ev::{Axis, Button, EventType};
 
-use crate::ble;
 use crate::errors::CarbleuratorError;
 use crate::gamepad;
 use crate::signaling::{update_signal_failure, update_signal_progress, update_signal_success};
@@ -18,54 +19,57 @@ const BLE_CHR_UUID_SHORT: u16 = 0xFFE1;
 
 pub(crate) struct Carbleurator {
     gilrs: gilrs::Gilrs,
-    adapter: ble::Adapter,
+    adapter: Option<Adapter>,
     d_x: i8,
     d_y: i8,
 }
 
 impl Carbleurator {
     pub(crate) fn new() -> Result<Self> {
-        let result = Self::init();
-        match &result {
-            Ok(_) => update_signal_progress(),
-            Err(e) => {
-                error!("Carbleurator initialization failure: {}", e);
-                update_signal_failure();
-            }
-        }
-        result
-    }
-
-    fn init() -> Result<Self> {
-        update_signal_progress();
         trace!("Initializing gamepads...");
         let gilrs = gamepad::init_gamepads()?;
         for (_id, gamepad) in gilrs.gamepads() {
             debug!("{} is {:?}", gamepad.name(), gamepad.power_info());
         }
-        update_signal_progress();
-
-        trace!("Initializing bluetooth...");
-        let manager = ble::Manager::new().map_err(|e| e.compat())?;
-
-        update_signal_progress();
-
-        trace!("Initializing BLE central...");
-        let adapter = ble::get_central(&manager)?;
-
         trace!("Carbleurator initialized.");
         Ok(Carbleurator {
             gilrs,
-            adapter,
+            adapter: None,
             d_x: 0,
             d_y: 0,
         })
     }
 
-    pub(crate) fn event_loop(&mut self) {
+    async fn connect(&mut self) -> Result<&Adapter> {
+        if self.adapter.is_none() {
+            update_signal_progress();
+
+            trace!("Initializing bluetooth...");
+            let manager = Manager::new().await?;
+
+            update_signal_progress();
+
+            trace!("Initializing BLE central...");
+            let adapter = manager
+                .adapters()
+                .await?
+                .into_iter()
+                .next()
+                .ok_or(CarbleuratorError::MissingBleAdapter)?;
+            self.adapter = Some(adapter);
+            update_signal_progress();
+        }
+        if let Some(adapter) = &self.adapter {
+            Ok(adapter)
+        } else {
+            Err(CarbleuratorError::MissingBleAdapter.into())
+        }
+    }
+
+    pub(crate) async fn event_loop(&mut self) {
         loop {
             trace!("Starting event processing...");
-            if let Err(e) = self.run_events() {
+            if let Err(e) = self.run_events().await {
                 error!("Event processing failed with error {}", e);
                 update_signal_failure();
             }
@@ -76,12 +80,16 @@ impl Carbleurator {
         }
     }
 
-    fn run_events(&mut self) -> Result<()> {
+    async fn run_events(&mut self) -> Result<()> {
+        let adapter = self.connect().await?;
+        let peripheral_uuid = bleuuid::uuid_from_u16(BLE_CHR_UUID_SHORT);
         update_signal_progress();
         trace!("Starting scan for BLE peripherals...");
-        self.adapter
-            .start_scan()
-            .map_err(|e| e.compat())
+        adapter
+            .start_scan(ScanFilter {
+                services: vec![peripheral_uuid],
+            })
+            .await
             .with_context(|| "Failed to scan for new BLE peripherals".to_string())?;
 
         update_signal_progress();
@@ -95,11 +103,18 @@ impl Carbleurator {
         let mut opt_peripheral = None;
         trace!("Iterating over discovered devices searching for a compatible peripheral...");
         while counter <= 5 && opt_peripheral.is_none() {
-            opt_peripheral = self
-                .adapter
-                .peripherals()
-                .into_iter()
-                .find(|x| x.properties().local_name == Some(BLE_PERIPH_NAME.to_string()));
+            let mut peripherals = adapter.peripherals().await?.into_iter();
+            opt_peripheral = loop {
+                if let Some(peripheral) = peripherals.next() {
+                    if let Some(props) = peripheral.properties().await? {
+                        if props.local_name == Some(BLE_PERIPH_NAME.to_string()) {
+                            break Some(peripheral);
+                        }
+                    }
+                } else {
+                    break None;
+                }
+            };
             if opt_peripheral.is_none() {
                 warn!("No compatible BLE peripherals found. Retrying...");
                 counter += 1;
@@ -110,16 +125,15 @@ impl Carbleurator {
 
         let peripheral = opt_peripheral.ok_or(CarbleuratorError::BleAdapterDiscoveryTimeout)?;
         trace!("BLE peripheral found. Connecting...");
-        peripheral.connect().map_err(|e| e.compat())?;
+        peripheral.connect().await?;
         update_signal_progress();
 
         trace!("Searching for correct peripheral characteristic for communication...");
-        let res_characteristics = peripheral
-            .discover_characteristics()
-            .map_err(|e| e.compat())?;
-        let characteristic = res_characteristics
+        peripheral.discover_services().await?;
+        let characteristic = peripheral
+            .characteristics()
             .into_iter()
-            .find(|x| x.uuid == UUID::B16(BLE_CHR_UUID_SHORT))
+            .find(|x| x.uuid == peripheral_uuid)
             .ok_or(CarbleuratorError::BleAdapterMissingCharacteristic)?;
 
         trace!("Gamepad input configured, connected to compatible car, starting control loop...");
@@ -164,8 +178,8 @@ impl Carbleurator {
             // passed
             trace!("Preparing to send message to vehicle: {:?}", msg);
             peripheral
-                .command(&characteristic, msg)
-                .map_err(|e| e.compat())?;
+                .write(&characteristic, msg, WriteType::WithoutResponse)
+                .await?;
 
             // TODO: crank up sleep time each period we go without getting input, up to a
             // predetermined limit, but reset the sleep time once we do get input
