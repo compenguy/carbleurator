@@ -1,12 +1,14 @@
 use anyhow::Result;
 use log::trace;
 
+mod bleserial;
 mod carbleurator;
 mod errors;
 mod gamepad;
+mod motor_control;
 mod signaling;
 
-#[async_std::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
     env_logger::init();
     trace!("Starting execution...");

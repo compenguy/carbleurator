@@ -14,12 +14,10 @@ default = []
 
 [dependencies]
 log = "0.4"
-env_logger = "0.9"
-async-std = { version = "1", features = ["attributes", "unstable"] }
-anyhow = "1.0"
-thiserror = "1.0"
-gilrs = "0.9"
-btleplug = "0.9"
-# btleplug 0.4 uses failure 0.1.8 and we need a trait from it to make the errors
-# compatible with anyhow
-#failure = "0.1.8"
+env_logger = "0.10"
+tokio = { version = "1", default-features = false, features = ["fs", "io-util", "time", "rt", "macros"] }
+anyhow = "1"
+thiserror = "1"
+gilrs = "0.10"
+btleplug = "0.11"
+uuid = "1"
