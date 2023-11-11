@@ -14,8 +14,8 @@ default = []
 
 [dependencies]
 log = "0.4"
-env_logger = "0.10"
-tokio = { version = "1", default-features = false, features = ["fs", "io-util", "time", "rt", "macros"] }
+env_logger = { version = "0.10", default-features = false, features = ["humantime", "regex"] }
+tokio = { version = "1", default-features = false, features = ["rt", "macros"] }
 anyhow = "1"
 thiserror = "1"
 gilrs = "0.10"
