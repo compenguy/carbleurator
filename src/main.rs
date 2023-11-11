@@ -1,5 +1,5 @@
 use anyhow::Result;
-use log::trace;
+use log::debug;
 
 mod bleserial;
 mod carbleurator;
@@ -11,11 +11,11 @@ mod signaling;
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
     env_logger::init();
-    trace!("Starting execution...");
+    debug!("Starting execution...");
     let mut car = carbleurator::Carbleurator::new()?;
 
-    trace!("Carbleurator initialized. Starting event loop...");
+    debug!("Carbleurator initialized. Starting event loop...");
     car.event_loop().await;
-    trace!("Event loop terminated.");
+    debug!("Event loop terminated.");
     Ok(())
 }

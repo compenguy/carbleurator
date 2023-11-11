@@ -1,5 +1,5 @@
 use anyhow::Result;
-use log::{error, trace};
+use log::{debug, error};
 
 use crate::bleserial::BleSerial;
 use crate::gamepad::Gamepad;
@@ -26,20 +26,20 @@ pub(crate) struct Carbleurator {
 
 impl Carbleurator {
     pub(crate) fn new() -> Result<Self> {
-        trace!("Initializing gamepads...");
+        debug!("Initializing gamepads...");
         let gamepad = Gamepad::new()?;
         let characteristic_uuid = bleuuid::uuid_from_u16(BLE_SVC_UUID_SHORT);
         let serial_if = BleSerial::new(characteristic_uuid, BLE_PERIPH_NAME.to_owned());
-        trace!("Carbleurator initialized.");
+        debug!("Carbleurator initialized.");
         update_signal_progress();
         Ok(Carbleurator { gamepad, serial_if })
     }
 
     pub(crate) async fn event_loop(&mut self) {
         update_signal_progress();
-        trace!("Gamepad input configured, connected to compatible car, starting control loop...");
+        debug!("Gamepad input configured, connected to compatible car, starting control loop...");
         loop {
-            trace!("Starting event processing...");
+            debug!("Starting event processing...");
             if let Err(e) = self.run_events().await {
                 error!("Event processing failed with error {}", e);
                 update_signal_failure();
@@ -62,7 +62,7 @@ impl Carbleurator {
             //let msg = motor_control::input_to_message_digital(x, y);
             let msg = motor_control::input_to_message_analog(x, y);
             if x != last_x || y != last_y || last_update.elapsed() > MAX_TIME_TX_DELAY {
-                trace!("Preparing to send message to vehicle: {:?}", msg);
+                debug!("Preparing to send message to vehicle: {:?}", msg);
                 self.serial_if.send_message(&msg).await?;
                 last_x = x;
                 last_y = y;

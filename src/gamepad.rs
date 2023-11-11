@@ -52,6 +52,10 @@ impl Gamepad {
                     warn!("Unhandled input event {:?}", n);
                 }
             }
+            debug!(
+                "Updated gamepad state: x: {:3} y: {:3}",
+                &self.d_x, &self.d_y
+            );
         }
         Ok(())
     }

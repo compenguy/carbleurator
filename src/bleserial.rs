@@ -33,12 +33,12 @@ impl BleSerial {
     async fn get_central(&mut self) -> Result<Adapter> {
         update_signal_progress();
 
-        trace!("Initializing bluetooth...");
+        debug!("Initializing bluetooth...");
         let manager = Manager::new().await?;
 
         update_signal_progress();
 
-        trace!("Initializing BLE central...");
+        debug!("Initializing BLE central...");
         let adapter = manager
             .adapters()
             .await?
@@ -54,8 +54,8 @@ impl BleSerial {
             let adapter = self.get_central().await?;
             update_signal_progress();
 
-            trace!("Starting scan for BLE peripherals...");
-            debug!("Using adapter {:?}", adapter.adapter_info().await);
+            debug!("Starting scan for BLE peripherals...");
+            trace!("Using adapter {:?}", adapter.adapter_info().await);
             adapter
                 .start_scan(ScanFilter {
                     //services: vec![self.characteristic_uuid],
@@ -66,13 +66,13 @@ impl BleSerial {
 
             update_signal_progress();
 
-            trace!("Waiting for devices to appear...");
+            debug!("Waiting for devices to appear...");
             // TODO: switch to async sleep
             std::thread::sleep(std::time::Duration::from_secs(1));
 
             update_signal_progress();
             let mut retries = 5;
-            trace!("Iterating over discovered devices searching for a compatible peripheral...");
+            debug!("Iterating over discovered devices searching for a compatible peripheral...");
             while retries > 0 && self.peripheral.is_none() {
                 let peripherals = adapter.peripherals().await?.into_iter();
                 for peripheral in peripherals {
@@ -107,9 +107,10 @@ impl BleSerial {
             .clone()
             .ok_or(CarbleuratorError::BleAdapterDiscoveryTimeout)?;
         //peripheral.discover_services().await?;
-        trace!("BLE peripheral found ({:?}). Connecting...", peripheral);
+        trace!("BLE peripheral found ({:?})", peripheral);
+        debug!("Connecting...");
         peripheral.connect().await?;
-        trace!("BLE peripheral connected.");
+        debug!("BLE peripheral connected.");
         update_signal_progress();
         peripheral.discover_services().await?;
         Ok(peripheral)
@@ -118,7 +119,7 @@ impl BleSerial {
     pub(crate) async fn get_characteristic(&mut self) -> Result<Characteristic> {
         if self.characteristic.is_none() {
             let peripheral = self.get_peripheral().await?;
-            trace!("Searching for correct peripheral characteristic for communication...");
+            debug!("Searching for correct peripheral characteristic for communication...");
             let characteristic = peripheral
                 .characteristics()
                 .into_iter()
