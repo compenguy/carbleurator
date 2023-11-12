@@ -75,7 +75,7 @@ impl Carbleurator {
                 );
             }
 
-            std::thread::sleep(std::time::Duration::from_millis(loop_sleep_period));
+            tokio::time::sleep(std::time::Duration::from_millis(loop_sleep_period)).await;
         }
     }
 }

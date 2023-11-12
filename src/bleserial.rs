@@ -67,8 +67,7 @@ impl BleSerial {
             update_signal_progress();
 
             debug!("Waiting for devices to appear...");
-            // TODO: switch to async sleep
-            std::thread::sleep(std::time::Duration::from_secs(1));
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
             update_signal_progress();
             let mut retries = 5;
@@ -83,12 +82,13 @@ impl BleSerial {
                     if local_name.is_none() {
                         continue;
                     }
-                    debug!("Found peripheral {:?}", local_name);
+                    debug!("\tperipheral {:?}", local_name);
                     if local_name
                         .as_ref()
                         .map(|name| name == &self.name)
                         .unwrap_or(false)
                     {
+                        debug!("Found matching peripheral: {}", self.name);
                         self.peripheral = Some(peripheral);
                         break;
                     }
@@ -108,8 +108,10 @@ impl BleSerial {
             .ok_or(CarbleuratorError::BleAdapterDiscoveryTimeout)?;
         //peripheral.discover_services().await?;
         trace!("BLE peripheral found ({:?})", peripheral);
-        debug!("Connecting...");
-        peripheral.connect().await?;
+        if ! peripheral.is_connected().await? {
+            debug!("Not connected to peripheral yet. Connecting...");
+            peripheral.connect().await?;
+        }
         debug!("BLE peripheral connected.");
         update_signal_progress();
         peripheral.discover_services().await?;
