@@ -58,8 +58,8 @@ struct SixBitAnalogFullDrive {
 
 impl From<(i8, i8)> for SixBitAnalogFullDrive {
     fn from(xy: (i8, i8)) -> Self {
-        let speed = (xy.0 as f32) / (i8::MAX as f32);
-        let rotation = (xy.1 as f32) / (i8::MAX as f32);
+        let rotation = (xy.0 as f32) / (i8::MAX as f32);
+        let speed = (xy.1 as f32) / (i8::MAX as f32);
         debug!(
             "Analog drive forward speed: {}, turn speed: {}",
             speed, rotation
