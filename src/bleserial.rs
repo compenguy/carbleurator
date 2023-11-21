@@ -108,7 +108,7 @@ impl BleSerial {
             .ok_or(CarbleuratorError::BleAdapterDiscoveryTimeout)?;
         //peripheral.discover_services().await?;
         trace!("BLE peripheral found ({:?})", peripheral);
-        if ! peripheral.is_connected().await? {
+        if !peripheral.is_connected().await? {
             debug!("Not connected to peripheral yet. Connecting...");
             peripheral.connect().await?;
         }
@@ -121,10 +121,14 @@ impl BleSerial {
     pub(crate) async fn get_characteristic(&mut self) -> Result<Characteristic> {
         if self.characteristic.is_none() {
             let peripheral = self.get_peripheral().await?;
-            debug!("Searching for correct peripheral characteristic for communication...");
+            debug!(
+                "Searching for correct peripheral characteristic for communication ({})...",
+                &self.characteristic_uuid
+            );
             let characteristic = peripheral
                 .characteristics()
                 .into_iter()
+                .inspect(|x| log::debug!("\tcharacteristic {}", x.uuid))
                 .find(|x| x.uuid == self.characteristic_uuid)
                 .ok_or(CarbleuratorError::BleAdapterMissingCharacteristic)?;
             self.characteristic = Some(characteristic);
