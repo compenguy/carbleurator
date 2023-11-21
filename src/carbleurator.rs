@@ -7,10 +7,10 @@ use crate::motor_control;
 use crate::signaling::{update_signal_failure, update_signal_progress, update_signal_success};
 use btleplug::api::bleuuid;
 
-const MAX_TIME_TX_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
-const LOOP_SLEEP_INCREMENT_MILLIS: u64 = 50;
-const LOOP_SLEEP_MIN_MILLIS: u64 = 50;
-const LOOP_SLEEP_MAX_MILLIS: u64 = 1000;
+const MAX_TIME_TX_DELAY: std::time::Duration = std::time::Duration::from_millis(200);
+const LOOP_SLEEP_INCREMENT_MILLIS: u64 = 25;
+const LOOP_SLEEP_MIN_MILLIS: u64 = 25;
+const LOOP_SLEEP_MAX_MILLIS: u64 = 100;
 
 const SUPPORTED_INTERFACES: [(&str, u16); 2] = [
     ("HC-08", 0xFFE0),  // Out-of-box configuration
