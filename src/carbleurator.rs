@@ -8,9 +8,9 @@ use crate::signaling::{update_signal_failure, update_signal_progress, update_sig
 use btleplug::api::bleuuid;
 
 const MAX_TIME_TX_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
-const LOOP_SLEEP_INCREMENT_MILLIS: u64 = 100;
-const LOOP_SLEEP_MIN_MILLIS: u64 = 100;
-const LOOP_SLEEP_MAX_MILLIS: u64 = 2000;
+const LOOP_SLEEP_INCREMENT_MILLIS: u64 = 50;
+const LOOP_SLEEP_MIN_MILLIS: u64 = 50;
+const LOOP_SLEEP_MAX_MILLIS: u64 = 1000;
 
 const SUPPORTED_INTERFACES: [(&str, u16); 2] = [
     ("HC-08", 0xFFE0),  // Out-of-box configuration
@@ -20,6 +20,8 @@ const SUPPORTED_INTERFACES: [(&str, u16); 2] = [
 pub(crate) struct Carbleurator {
     gamepad: Gamepad,
     serial_if: BleSerial,
+    last_x: i8,
+    last_y: i8,
 }
 
 impl Carbleurator {
@@ -30,7 +32,12 @@ impl Carbleurator {
         let serial_if = BleSerial::new(characteristic_uuid, SUPPORTED_INTERFACES[1].0.to_owned());
         debug!("Carbleurator initialized.");
         update_signal_progress();
-        Ok(Carbleurator { gamepad, serial_if })
+        Ok(Carbleurator {
+            gamepad,
+            serial_if,
+            last_x: 0,
+            last_y: 0,
+        })
     }
 
     pub(crate) async fn event_loop(&mut self) {
@@ -48,22 +55,30 @@ impl Carbleurator {
         }
     }
 
+    fn read_gamepad(&mut self) -> Result<Option<u8>> {
+        self.gamepad.update()?;
+        let (x, y) = self.gamepad.read();
+        if x != self.last_x || y != self.last_y {
+            let msg = motor_control::input_to_message_analog(x, y);
+            //let msg = motor_control::input_to_message_digital(x, y);
+            self.last_x = x;
+            self.last_y = y;
+            Ok(Some(msg))
+        } else {
+            Ok(None)
+        }
+    }
+
     async fn run_events(&mut self) -> Result<()> {
         update_signal_success();
-        let mut last_x = 0;
-        let mut last_y = 0;
+        let mut last_msg: u8 = 0;
         let mut last_update = std::time::Instant::now() - MAX_TIME_TX_DELAY;
         let mut loop_sleep_period = LOOP_SLEEP_MIN_MILLIS;
         loop {
-            self.gamepad.update()?;
-            let (x, y) = self.gamepad.read();
-            //let msg = motor_control::input_to_message_digital(x, y);
-            let msg = motor_control::input_to_message_analog(x, y);
-            if x != last_x || y != last_y || last_update.elapsed() > MAX_TIME_TX_DELAY {
-                debug!("Preparing to send message to vehicle: {:?}", msg);
-                self.serial_if.send_message(&msg).await?;
-                last_x = x;
-                last_y = y;
+            let msg = self.read_gamepad()?.unwrap_or(last_msg);
+            if msg != last_msg || last_update.elapsed() > MAX_TIME_TX_DELAY {
+                self.serial_if.send_message(msg).await?;
+                last_msg = msg;
                 last_update = std::time::Instant::now();
                 loop_sleep_period = LOOP_SLEEP_MIN_MILLIS;
             } else {

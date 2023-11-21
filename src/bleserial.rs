@@ -139,12 +139,12 @@ impl BleSerial {
             .map_err(|e| e.into())
     }
 
-    pub(crate) async fn send_message(&mut self, message: &[u8]) -> Result<()> {
+    pub(crate) async fn send_message(&mut self, message: u8) -> Result<()> {
         let peripheral = self.get_peripheral().await?;
         let characteristic = self.get_characteristic().await?;
 
         peripheral
-            .write(&characteristic, message, WriteType::WithoutResponse)
+            .write(&characteristic, &[message], WriteType::WithoutResponse)
             .await
             .map_err(|e| e.into())
     }

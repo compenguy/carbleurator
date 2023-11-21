@@ -1,3 +1,5 @@
+use log::debug;
+
 const INPUT_DEADZONE_MIN: i8 = -63;
 const INPUT_DEADZONE_MAX: i8 = 63;
 const INPUT_ACTIVE_POS_MIN: i8 = 64;
@@ -6,22 +8,21 @@ const INPUT_ACTIVE_NEG_MIN: i8 = -128;
 const INPUT_ACTIVE_NEG_MAX: i8 = -64;
 
 #[allow(dead_code)]
-pub(crate) fn input_to_message_digital(x: i8, y: i8) -> Vec<u8> {
+pub(crate) fn input_to_message_digital(x: i8, y: i8) -> u8 {
     match (x, y) {
-        (INPUT_DEADZONE_MIN..=INPUT_DEADZONE_MAX, INPUT_DEADZONE_MIN..=INPUT_DEADZONE_MAX) => {
-            b"s".to_vec()
-        }
-        (_, INPUT_ACTIVE_POS_MIN..=INPUT_ACTIVE_POS_MAX) => b"b".to_vec(),
-        (_, INPUT_ACTIVE_NEG_MIN..=INPUT_ACTIVE_NEG_MAX) => b"f".to_vec(),
+        (INPUT_DEADZONE_MIN..=INPUT_DEADZONE_MAX, INPUT_DEADZONE_MIN..=INPUT_DEADZONE_MAX) => b's',
+        (_, INPUT_ACTIVE_POS_MIN..=INPUT_ACTIVE_POS_MAX) => b'b',
+        (_, INPUT_ACTIVE_NEG_MIN..=INPUT_ACTIVE_NEG_MAX) => b'f',
         (INPUT_ACTIVE_NEG_MIN..=INPUT_ACTIVE_NEG_MAX, INPUT_DEADZONE_MIN..=INPUT_DEADZONE_MAX) => {
-            b"l".to_vec()
+            b'l'
         }
         (INPUT_ACTIVE_POS_MIN..=INPUT_ACTIVE_POS_MAX, INPUT_DEADZONE_MIN..=INPUT_DEADZONE_MAX) => {
-            b"r".to_vec()
+            b'r'
         }
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 enum ThreeBitAnalogMotor {
     S0 = 0b000,
@@ -49,6 +50,7 @@ impl From<i8> for ThreeBitAnalogMotor {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 struct SixBitAnalogFullDrive {
     left: ThreeBitAnalogMotor,
     right: ThreeBitAnalogMotor,
@@ -58,11 +60,17 @@ impl From<(i8, i8)> for SixBitAnalogFullDrive {
     fn from(xy: (i8, i8)) -> Self {
         let speed = (xy.0 as f32) / (i8::MAX as f32);
         let rotation = (xy.1 as f32) / (i8::MAX as f32);
+        debug!(
+            "Analog drive forward speed: {}, turn speed: {}",
+            speed, rotation
+        );
         let mut left: f32 = speed;
         let mut right: f32 = speed;
 
         left -= rotation;
         right += rotation;
+        debug!("Analog drive prescaling left  speed: {}", left);
+        debug!("Analog drive prescaling right speed: {}", right);
 
         // Now determine the scaling factor to apply to re-scale it to -1.0 to 1.0
         let greater: f32 = speed.abs().min(rotation.abs());
@@ -78,8 +86,12 @@ impl From<(i8, i8)> for SixBitAnalogFullDrive {
             right /= scaling_factor;
         }
 
+        debug!("Analog drive scaled left  speed: {}", left);
+        debug!("Analog drive scaled right speed: {}", right);
+
         let left_analog = ThreeBitAnalogMotor::from((left * i8::MAX as f32) as i8);
         let right_analog = ThreeBitAnalogMotor::from((right * i8::MAX as f32) as i8);
+
         SixBitAnalogFullDrive {
             left: left_analog,
             right: right_analog,
@@ -94,8 +106,10 @@ impl From<SixBitAnalogFullDrive> for u8 {
 }
 
 #[allow(dead_code)]
-pub(crate) fn input_to_message_analog(x: i8, y: i8) -> Vec<u8> {
+pub(crate) fn input_to_message_analog(x: i8, y: i8) -> u8 {
     let six_bit_analog = SixBitAnalogFullDrive::from((x, y));
+    debug!("Analog drive levels: {:?}", six_bit_analog);
     let message: u8 = u8::from(six_bit_analog);
-    vec![message]
+    debug!("Analog drive encoded message: {:0<8b}", message);
+    message
 }
