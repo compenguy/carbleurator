@@ -50,89 +50,115 @@ impl BleSerial {
     }
 
     async fn get_peripheral(&mut self) -> Result<Peripheral> {
-        if self.peripheral.is_none() {
-            let adapter = self.get_central().await?;
-            update_signal_progress();
+        if let Some(peripheral) = &self.peripheral {
+            return Ok(peripheral.clone());
+        }
 
-            debug!("Starting scan for BLE peripherals...");
-            trace!("Using adapter {:?}", adapter.adapter_info().await);
-            adapter
-                .start_scan(ScanFilter {
-                    //services: vec![self.characteristic_uuid],
-                    services: vec![],
-                })
-                .await
-                .with_context(|| "Failed to scan for new BLE peripherals".to_string())?;
+        debug!("Initiating discovery of requested peripheral...");
+        let adapter = self.get_central().await?;
+        update_signal_progress();
 
-            update_signal_progress();
+        debug!("Starting scan for BLE peripherals...");
+        trace!("Using adapter {:?}", adapter.adapter_info().await);
+        adapter
+            .start_scan(ScanFilter {
+                //services: vec![self.service_uuid],
+                services: vec![],
+            })
+            .await
+            .with_context(|| "Failed to scan for new BLE peripherals".to_string())?;
 
-            debug!("Waiting for devices to appear...");
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        update_signal_progress();
 
-            update_signal_progress();
-            let mut retries = 5;
-            debug!("Iterating over discovered devices searching for a compatible peripheral...");
-            while retries > 0 && self.peripheral.is_none() {
-                let peripherals = adapter.peripherals().await?.into_iter();
-                for peripheral in peripherals {
-                    let local_name = peripheral
-                        .properties()
-                        .await?
-                        .and_then(|props| props.local_name);
-                    if local_name.is_none() {
-                        continue;
-                    }
-                    debug!("\tperipheral {:?}", local_name);
-                    if local_name
-                        .as_ref()
-                        .map(|name| name == &self.name)
-                        .unwrap_or(false)
-                    {
-                        debug!("Found matching peripheral: {}", self.name);
-                        self.peripheral = Some(peripheral);
-                        break;
-                    }
+        debug!("Waiting for devices to appear...");
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+        update_signal_progress();
+        let mut retries = 5;
+        debug!("Iterating over discovered devices searching for a compatible peripheral...");
+        while retries > 0 && self.peripheral.is_none() {
+            let peripherals = adapter.peripherals().await?.into_iter();
+            for peripheral in peripherals {
+                let local_name = peripheral
+                    .properties()
+                    .await?
+                    .and_then(|props| props.local_name);
+                if local_name.is_none() {
+                    continue;
                 }
-                if self.peripheral.is_none() {
-                    warn!("No compatible BLE peripherals found. Retrying...");
-                    retries -= 1;
-                    std::thread::sleep(std::time::Duration::from_secs(1));
+                debug!("\tperipheral {:?}", local_name);
+                if local_name
+                    .as_ref()
+                    .map(|name| name == &self.name)
+                    .unwrap_or(false)
+                {
+                    debug!("Found matching peripheral: {}", self.name);
+                    self.peripheral = Some(peripheral);
+                    break;
                 }
-                update_signal_progress();
             }
+            if self.peripheral.is_none() {
+                warn!("No compatible BLE peripherals found. Retrying...");
+                retries -= 1;
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
+            update_signal_progress();
         }
 
         let peripheral = self
             .peripheral
             .clone()
             .ok_or(CarbleuratorError::BleAdapterDiscoveryTimeout)?;
-        //peripheral.discover_services().await?;
         trace!("BLE peripheral found ({:?})", peripheral);
-        if !peripheral.is_connected().await? {
-            debug!("Not connected to peripheral yet. Connecting...");
-            peripheral.connect().await?;
-        }
-        debug!("BLE peripheral connected.");
-        update_signal_progress();
-        peripheral.discover_services().await?;
+
         Ok(peripheral)
     }
 
-    pub(crate) async fn get_characteristic(&mut self) -> Result<Characteristic> {
-        if self.characteristic.is_none() {
-            let peripheral = self.get_peripheral().await?;
-            debug!(
-                "Searching for correct peripheral characteristic for communication ({})...",
-                &self.characteristic_uuid
-            );
-            let characteristic = peripheral
-                .characteristics()
-                .into_iter()
-                .inspect(|x| log::debug!("\tcharacteristic {}", x.uuid))
-                .find(|x| x.uuid == self.characteristic_uuid)
-                .ok_or(CarbleuratorError::BleAdapterMissingCharacteristic)?;
-            self.characteristic = Some(characteristic);
+    async fn connected_peripheral(&mut self) -> Result<Peripheral> {
+        let peripheral = self.get_peripheral().await?;
+
+        if !peripheral.is_connected().await? {
+            debug!("Not connected to peripheral yet. Connecting...");
+            peripheral.connect().await?;
+            debug!("BLE peripheral connected.");
         }
+        update_signal_progress();
+        Ok(peripheral)
+    }
+
+    async fn is_connected(&self) -> Result<bool> {
+        let connected = if let Some(peripheral) = &self.peripheral {
+            peripheral.is_connected().await?
+        } else {
+            false
+        };
+        Ok(connected)
+    }
+
+    pub(crate) async fn get_characteristic(&mut self) -> Result<Characteristic> {
+        // First check whether we already have the characteristic, and still have a valid
+        // connection
+        if let Some(characteristic) = &self.characteristic {
+            if self.is_connected().await? {
+                return Ok(characteristic.clone());
+            }
+        }
+
+        let peripheral = self.connected_peripheral().await?;
+        debug!(
+            "Searching for correct peripheral characteristic for communication ({})...",
+            &self.characteristic_uuid
+        );
+        peripheral.discover_services().await?;
+
+        let characteristic = peripheral
+            .characteristics()
+            .into_iter()
+            .inspect(|x| log::debug!("\tcharacteristic {}", x.uuid))
+            .find(|x| x.uuid == self.characteristic_uuid)
+            .ok_or(CarbleuratorError::BleAdapterMissingCharacteristic)?;
+        self.characteristic = Some(characteristic);
+
         self.characteristic
             .clone()
             .ok_or(CarbleuratorError::BleAdapterMissingCharacteristic)
@@ -140,7 +166,7 @@ impl BleSerial {
     }
 
     pub(crate) async fn send_message(&mut self, message: u8) -> Result<()> {
-        let peripheral = self.get_peripheral().await?;
+        let peripheral = self.connected_peripheral().await?;
         let characteristic = self.get_characteristic().await?;
 
         peripheral

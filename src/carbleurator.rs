@@ -20,8 +20,6 @@ const SUPPORTED_INTERFACES: [(&str, u16); 2] = [
 pub(crate) struct Carbleurator {
     gamepad: Gamepad,
     serial_if: BleSerial,
-    last_x: i8,
-    last_y: i8,
 }
 
 impl Carbleurator {
@@ -32,12 +30,7 @@ impl Carbleurator {
         let serial_if = BleSerial::new(characteristic_uuid, SUPPORTED_INTERFACES[1].0.to_owned());
         debug!("Carbleurator initialized.");
         update_signal_progress();
-        Ok(Carbleurator {
-            gamepad,
-            serial_if,
-            last_x: 0,
-            last_y: 0,
-        })
+        Ok(Carbleurator { gamepad, serial_if })
     }
 
     pub(crate) async fn event_loop(&mut self) {
@@ -55,18 +48,10 @@ impl Carbleurator {
         }
     }
 
-    fn read_gamepad(&mut self) -> Result<Option<u8>> {
-        self.gamepad.update()?;
-        let (x, y) = self.gamepad.read();
-        if x != self.last_x || y != self.last_y {
-            let msg = motor_control::input_to_message_analog(x, y);
-            //let msg = motor_control::input_to_message_digital(x, y);
-            self.last_x = x;
-            self.last_y = y;
-            Ok(Some(msg))
-        } else {
-            Ok(None)
-        }
+    fn read_gamepad(&mut self) -> Option<u8> {
+        self.gamepad
+            .read()
+            .map(|(x, y)| motor_control::input_to_message_analog(x, y))
     }
 
     async fn run_events(&mut self) -> Result<()> {
@@ -75,7 +60,7 @@ impl Carbleurator {
         let mut last_update = std::time::Instant::now() - MAX_TIME_TX_DELAY;
         let mut loop_sleep_period = LOOP_SLEEP_MIN_MILLIS;
         loop {
-            let msg = self.read_gamepad()?.unwrap_or(last_msg);
+            let msg = self.read_gamepad().unwrap_or(last_msg);
             if msg != last_msg || last_update.elapsed() > MAX_TIME_TX_DELAY {
                 self.serial_if.send_message(msg).await?;
                 last_msg = msg;
