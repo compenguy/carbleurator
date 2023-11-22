@@ -67,30 +67,31 @@ impl From<(i8, i8)> for SixBitAnalogFullDrive {
         let mut left: f32 = speed;
         let mut right: f32 = speed;
 
-        left -= rotation;
-        right += rotation;
-        debug!("Analog drive prescaling left  speed: {}", left);
-        debug!("Analog drive prescaling right speed: {}", right);
+        left += rotation;
+        right -= rotation;
 
         // Now determine the scaling factor to apply to re-scale it to -1.0 to 1.0
         let greater: f32 = speed.abs().min(rotation.abs());
         let lesser: f32 = speed.abs().max(rotation.abs());
 
+        let mut left_scaled = left;
+        let mut right_scaled = right;
+
         // Avoid a divide-by-zero
         if greater == 0.0 {
-            left = 0.0;
-            right = 0.0;
+            left_scaled = 0.0;
+            right_scaled = 0.0;
         } else {
             let scaling_factor: f32 = (greater + lesser) / greater;
-            left /= scaling_factor;
-            right /= scaling_factor;
+            left_scaled /= scaling_factor;
+            right_scaled /= scaling_factor;
         }
 
-        debug!("Analog drive scaled left  speed: {}", left);
-        debug!("Analog drive scaled right speed: {}", right);
+        let left_analog = ThreeBitAnalogMotor::from((left_scaled * i8::MAX as f32) as i8);
+        let right_analog = ThreeBitAnalogMotor::from((right_scaled * i8::MAX as f32) as i8);
 
-        let left_analog = ThreeBitAnalogMotor::from((left * i8::MAX as f32) as i8);
-        let right_analog = ThreeBitAnalogMotor::from((right * i8::MAX as f32) as i8);
+        debug!("Analog drive left prescaled: {} scaled: {} translated: {:?}", left, left_scaled, left_analog);
+        debug!("Analog drive right prescaled: {} scaled: {} translated: {:?}", right, right_scaled, right_analog);
 
         SixBitAnalogFullDrive {
             left: left_analog,
@@ -108,7 +109,6 @@ impl From<SixBitAnalogFullDrive> for u8 {
 #[allow(dead_code)]
 pub(crate) fn input_to_message_analog(x: i8, y: i8) -> u8 {
     let six_bit_analog = SixBitAnalogFullDrive::from((x, y));
-    debug!("Analog drive levels: {:?}", six_bit_analog);
     let message: u8 = u8::from(six_bit_analog);
     debug!("Analog drive encoded message: {:0<8b}", message);
     message
